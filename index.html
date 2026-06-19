@@ -147,6 +147,53 @@ header{padding:26px 2px 14px}
   cursor:pointer;margin-bottom:18px;font-family:'Karla',sans-serif;
 }
 
+/* ---------- Navegador de días ---------- */
+.day-nav{
+  display:flex;align-items:center;gap:8px;margin:14px 0 6px;
+  background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);
+  padding:6px;
+}
+.day-nav button.arrow{
+  border:none;background:transparent;color:var(--sea);font-size:1.3rem;
+  padding:8px 12px;border-radius:10px;cursor:pointer;font-weight:700;
+}
+.day-nav button.arrow:active{background:var(--sea-light)}
+.day-nav .day-label{
+  flex:1;text-align:center;font-family:'Fraunces',serif;font-weight:600;
+  font-size:1rem;color:var(--ink);line-height:1.2;cursor:pointer;
+  padding:6px 4px;border-radius:10px;
+}
+.day-nav .day-label:active{background:var(--sea-light)}
+.day-label .badge{
+  display:inline-block;font-family:'Karla',sans-serif;font-size:.7rem;
+  font-weight:700;color:var(--sun);background:var(--sun-soft);
+  padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:middle;
+}
+.day-strip{
+  display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;
+  scrollbar-width:none;-webkit-overflow-scrolling:touch;
+}
+.day-strip::-webkit-scrollbar{display:none}
+.day-strip button{
+  flex:0 0 auto;min-width:50px;border:none;background:var(--surface);
+  border-radius:12px;padding:8px 6px;cursor:pointer;font-family:'Karla',sans-serif;
+  display:flex;flex-direction:column;align-items:center;gap:2px;box-shadow:var(--shadow);
+}
+.day-strip button .dow{font-size:.7rem;color:var(--ink-soft);font-weight:700;text-transform:uppercase}
+.day-strip button .num{font-family:'Fraunces',serif;font-size:1.05rem;font-weight:600;color:var(--ink)}
+.day-strip button.today{background:var(--sea-light)}
+.day-strip button.active{background:var(--sea);color:#fff}
+.day-strip button.active .dow,.day-strip button.active .num{color:#fff}
+.day-strip button.has-plan::after{
+  content:"";display:block;width:5px;height:5px;border-radius:50%;
+  background:var(--sun);margin-top:3px;
+}
+.day-strip button.active.has-plan::after{background:#fff}
+.jump-today{
+  border:none;background:transparent;color:var(--sea);font-size:.78rem;
+  font-weight:700;padding:4px 8px;cursor:pointer;font-family:'Karla',sans-serif;
+}
+
 /* ---------- Modo armar / horarios ---------- */
 .edit-toggle{
   width:100%;border:none;border-radius:var(--radius);padding:12px;margin-bottom:14px;
@@ -352,6 +399,13 @@ nav button.on{background:var(--sea-light);color:var(--ink)}
       </div>
     </div>
 
+    <div class="day-nav">
+      <button class="arrow" id="prevDay" aria-label="Día anterior">‹</button>
+      <div class="day-label" id="dayLabel" title="Tocá para ir a hoy"></div>
+      <button class="arrow" id="nextDay" aria-label="Día siguiente">›</button>
+    </div>
+    <div class="day-strip" id="dayStrip"></div>
+
     <button class="edit-toggle" id="editToggle">✎ Armar mi día — bloques, horarios y tareas</button>
     <div class="tide" id="blocks"></div>
     <button class="add-block" id="addBlock">+ Agregar bloque</button>
@@ -507,6 +561,55 @@ function load(){
 function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function todayKey(d){ const x = d||new Date(); return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0'); }
+function keyToDate(k){ return new Date(k+'T12:00:00'); }
+function shiftKey(k, days){ const d=keyToDate(k); d.setDate(d.getDate()+days); return todayKey(d); }
+
+/* Día que se está viendo (puede ser futuro o pasado) */
+let viewKey = todayKey();
+function setViewDay(k){ viewKey = k; renderDayLabel(); renderDayStrip(); renderBlocks(); renderCheckinValues(); window.scrollTo({top:0,behavior:'smooth'}); }
+function isToday(k){ return k === todayKey(); }
+function isFuture(k){ return k > todayKey(); }
+function isPast(k){ return k < todayKey(); }
+
+function dayHasPlan(k){
+  const d = state.days[k]; if(!d) return false;
+  return d.blocks.some(b=>b.tasks.length>0) || (d.intention && d.intention.trim());
+}
+function renderDayLabel(){
+  const d = keyToDate(viewKey);
+  const lbl = document.getElementById('dayLabel');
+  let txt = d.toLocaleDateString('es-AR',{weekday:'long', day:'numeric', month:'long'});
+  let badge = '';
+  const diff = Math.round((keyToDate(viewKey) - keyToDate(todayKey()))/86400000);
+  if(diff===0) badge = '<span class="badge">hoy</span>';
+  else if(diff===1) badge = '<span class="badge">mañana</span>';
+  else if(diff===-1) badge = '<span class="badge">ayer</span>';
+  else if(diff>1) badge = '<span class="badge">en '+diff+' días</span>';
+  else badge = '<span class="badge">hace '+Math.abs(diff)+' días</span>';
+  lbl.innerHTML = txt.charAt(0).toUpperCase()+txt.slice(1)+' '+badge;
+}
+function renderDayStrip(){
+  const strip = document.getElementById('dayStrip');
+  // Mostrar 3 días pasados, hoy, y 10 días hacia adelante para planificar
+  const days = [];
+  for(let i=-3;i<=10;i++) days.push(shiftKey(todayKey(), i));
+  strip.innerHTML = days.map(k=>{
+    const d = keyToDate(k);
+    const dow = d.toLocaleDateString('es-AR',{weekday:'short'}).slice(0,3);
+    const num = d.getDate();
+    const cls = ['',isToday(k)?'today':'', k===viewKey?'active':'', dayHasPlan(k)?'has-plan':''].join(' ');
+    return `<button class="${cls}" data-k="${k}"><div class="dow">${dow}</div><div class="num">${num}</div></button>`;
+  }).join('');
+  strip.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', ()=>setViewDay(b.dataset.k));
+  });
+  // Centrar el día activo
+  const active = strip.querySelector('button.active');
+  if(active) active.scrollIntoView({inline:'center', block:'nearest'});
+}
+document.getElementById('prevDay').addEventListener('click', ()=>setViewDay(shiftKey(viewKey, -1)));
+document.getElementById('nextDay').addEventListener('click', ()=>setViewDay(shiftKey(viewKey, 1)));
+document.getElementById('dayLabel').addEventListener('click', ()=>setViewDay(todayKey()));
 function weekKey(d){
   const x = d? new Date(d) : new Date();
   const day = (x.getDay()+6)%7; // lunes = 0
@@ -609,7 +712,7 @@ document.getElementById('editToggle').addEventListener('click', ()=>{
 });
 
 function renderBlocks(){
-  const day = getDay(todayKey());
+  const day = getDay(viewKey);
   blocksEl.innerHTML = '';
   day.blocks.forEach(block=>{
     const allDone = block.tasks.length>0 && block.tasks.every(t=>t.done);
@@ -677,23 +780,26 @@ function renderBlocks(){
       const v = addInput.value.trim();
       if(!v) return;
       block.tasks.push({id:uid(), text:v, done:false, prio:false, time:''});
-      addInput.value=''; save(); renderBlocks();
+      addInput.value=''; save(); renderBlocks(); renderDayStrip();
     }
     addBtn.addEventListener('click', addTask);
     addInput.addEventListener('keydown', e=>{ if(e.key==='Enter') addTask(); });
     blocksEl.appendChild(el);
   });
+  // Ocultar/mostrar el "Registro del día" si es futuro
+  const closeDayEl = document.querySelector('.closeday');
+  if(closeDayEl) closeDayEl.style.display = isFuture(viewKey) ? 'none' : '';
 }
 document.getElementById('addBlock').addEventListener('click', ()=>{
-  const day = getDay(todayKey());
+  const day = getDay(viewKey);
   day.blocks.push({id:uid(), name:'Nuevo bloque', time:'', tasks:[]});
-  save(); renderBlocks();
+  save(); renderBlocks(); renderDayStrip();
 });
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
 
 /* =================== Intención =================== */
 const intentionEl = document.getElementById('intention');
-intentionEl.addEventListener('change', ()=>{ getDay(todayKey()).intention = intentionEl.value.trim(); save(); });
+intentionEl.addEventListener('change', ()=>{ getDay(viewKey).intention = intentionEl.value.trim(); save(); renderDayStrip(); });
 
 /* =================== Cierre del día (dinámico) =================== */
 function activeTrackers(sec){
@@ -766,7 +872,7 @@ function renderCheckinStructure(){
 }
 
 function bindCheckin(){
-  const ci = ()=>getDay(todayKey()).checkin;
+  const ci = ()=>getDay(viewKey).checkin;
   document.querySelectorAll('#ciSections .scale').forEach(sc=>{
     sc.querySelectorAll('button').forEach(btn=>{
       btn.addEventListener('click', ()=>{
@@ -791,7 +897,7 @@ function bindCheckin(){
 }
 
 function renderCheckinValues(){
-  const ci = getDay(todayKey()).checkin;
+  const ci = getDay(viewKey).checkin;
   document.querySelectorAll('#ciSections .scale').forEach(sc=>{
     const v = sc.dataset.core ? ci[sc.dataset.core] : ci.t[sc.dataset.tid];
     sc.querySelectorAll('button').forEach(b=>b.classList.toggle('on', v===parseInt(b.dataset.v)));
@@ -800,21 +906,21 @@ function renderCheckinValues(){
     const v = inp.dataset.core ? ci[inp.dataset.core] : ci.t[inp.dataset.tid];
     if(document.activeElement!==inp) inp.value = (v===null||v===undefined)? '' : v;
   });
-  intentionEl.value = getDay(todayKey()).intention || '';
+  intentionEl.value = getDay(viewKey).intention || '';
 }
 
 document.getElementById('ciToggle').addEventListener('click', ()=>{
   const c = document.getElementById('checkin');
   c.classList.toggle('open');
-  document.getElementById('ciToggle').textContent = c.classList.contains('open') ? 'Cerrar' : 'Abrir mi cierre';
+  document.getElementById('ciToggle').textContent = c.classList.contains('open') ? 'Cerrar' : 'Abrir mi registro';
 });
 document.getElementById('saveCi').addEventListener('click', ()=>{
   save();
   const n = document.getElementById('savedNote');
   n.style.display='block';
   setTimeout(()=>n.style.display='none', 2500);
-  syncDay(todayKey(), true);
-  toast('Día guardado 🌊');
+  syncDay(viewKey, true);
+  toast(isToday(viewKey)?'Día guardado 🌊':'Registro guardado ✓');
 });
 
 /* =================== Agregados semanales =================== */
@@ -1143,7 +1249,10 @@ function toast(msg){
 
 /* =================== Init =================== */
 function init(){
+  viewKey = todayKey();
   renderHeader();
+  renderDayLabel();
+  renderDayStrip();
   renderGoals();
   renderBlocks();
   renderCheckinStructure();
